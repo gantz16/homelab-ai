@@ -179,10 +179,148 @@ def run() -> int:
     ]
 
     print()
+    print("=" * 118)
+    print("TEST BREAKDOWN")
+    print("=" * 118)
+    print(
+        f"{'Test ID':<24}"
+        f"{'Category':<28}"
+        f"{'Result':<10}"
+        f"{'Score':<9}"
+        f"{'TTFT':>9}"
+        f"{'Decode':>13}"
+        f"{'Prompt':>10}"
+        f"{'Output':>10}"
+    )
+    print("-" * 118)
+
+    for result in results:
+        if "metrics" not in result:
+            print(
+                f"{result['test_id']:<24}"
+                f"{result['category']:<28}"
+                f"{'ERROR':<10}"
+                f"{result.get('score', 0)}/{result.get('possible', 0):<7}"
+                f"{'-':>9}"
+                f"{'-':>13}"
+                f"{'-':>10}"
+                f"{'-':>10}"
+            )
+            continue
+
+        metrics = result["metrics"]
+        score_text = f"{result['score']}/{result['possible']}"
+
+        print(
+            f"{result['test_id']:<24}"
+            f"{result['category']:<28}"
+            f"{result['status']:<10}"
+            f"{score_text:<9}"
+            f"{metrics['ttft']:>8.3f}s"
+            f"{metrics['decode_speed_tps']:>10.2f} t/s"
+            f"{metrics['prompt_tokens']:>10}"
+            f"{metrics['completion_tokens']:>10}"
+        )
+
+    print("=" * 118)
+
+    category_summary: dict[str, dict[str, int]] = {}
+
+    for result in results:
+        category = result["category"]
+        summary = category_summary.setdefault(
+            category,
+            {
+                "tests": 0,
+                "pass": 0,
+                "partial": 0,
+                "fail": 0,
+                "error": 0,
+                "score": 0,
+                "possible": 0,
+            },
+        )
+
+        summary["tests"] += 1
+        summary["score"] += int(result.get("score", 0))
+        summary["possible"] += int(result.get("possible", 0))
+
+        status = result.get("status", "ERROR").lower()
+
+        if status == "pass":
+            summary["pass"] += 1
+        elif status == "partial":
+            summary["partial"] += 1
+        elif status == "fail":
+            summary["fail"] += 1
+        else:
+            summary["error"] += 1
+
+    print()
+    print("=" * 96)
+    print("CATEGORY SUMMARY")
+    print("=" * 96)
+    print(
+        f"{'Category':<32}"
+        f"{'Tests':>7}"
+        f"{'Pass':>7}"
+        f"{'Partial':>9}"
+        f"{'Fail':>7}"
+        f"{'Error':>8}"
+        f"{'Score':>12}"
+    )
+    print("-" * 96)
+
+    for category in sorted(category_summary):
+        summary = category_summary[category]
+        score_text = f"{summary['score']}/{summary['possible']}"
+
+        print(
+            f"{category:<32}"
+            f"{summary['tests']:>7}"
+            f"{summary['pass']:>7}"
+            f"{summary['partial']:>9}"
+            f"{summary['fail']:>7}"
+            f"{summary['error']:>8}"
+            f"{score_text:>12}"
+        )
+
+    print("=" * 96)
+
+    failed_checks = []
+
+    for result in results:
+        for check in result.get("checks", []):
+            if not check["passed"]:
+                failed_checks.append(
+                    (
+                        result["test_id"],
+                        result["name"],
+                        check["name"],
+                        check.get("detail", ""),
+                    )
+                )
+
+    if failed_checks:
+        print()
+        print("=" * 96)
+        print("FAILED CHECKS")
+        print("=" * 96)
+
+        for test_id, name, check_name, detail in failed_checks:
+            print(f"[{test_id}] {name}")
+            print(f"  - {check_name}")
+            if detail:
+                print(f"    {detail}")
+
+        print("=" * 96)
+
+    print()
     print("=" * 64)
     print("FINAL SUMMARY")
     print("=" * 64)
     print_metric("Model:", args.model)
+    print_metric("Tests:", str(len(results)))
     print_metric("Score:", f"{total_score}/{total_possible}")
     print_metric("Elapsed:", f"{elapsed_seconds:.2f} sec")
 
@@ -191,6 +329,13 @@ def run() -> int:
         decode_speeds = [
             metric["decode_speed_tps"] for metric in successful_metrics
         ]
+
+        prompt_token_total = sum(
+            metric["prompt_tokens"] for metric in successful_metrics
+        )
+        completion_token_total = sum(
+            metric["completion_tokens"] for metric in successful_metrics
+        )
 
         print_metric("Average TTFT:", f"{statistics.mean(ttfts):.3f} sec")
         print_metric("Median TTFT:", f"{statistics.median(ttfts):.3f} sec")
@@ -202,18 +347,11 @@ def run() -> int:
             "Median decode:",
             f"{statistics.median(decode_speeds):.2f} tok/s",
         )
+        print_metric("Prompt tokens:", str(prompt_token_total))
+        print_metric("Completion tokens:", str(completion_token_total))
         print_metric(
-            "Prompt tokens:",
-            str(sum(metric["prompt_tokens"] for metric in successful_metrics)),
-        )
-        print_metric(
-            "Completion tokens:",
-            str(
-                sum(
-                    metric["completion_tokens"]
-                    for metric in successful_metrics
-                )
-            ),
+            "All tokens:",
+            str(prompt_token_total + completion_token_total),
         )
 
     output = {
