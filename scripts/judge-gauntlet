@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# Stop immediately on errors, undefined variables, or failed pipeline commands.
+set -euo pipefail
+
+# Require the path to a previously saved candidate benchmark result.
+if [ "$#" -lt 1 ]; then
+    echo "Usage: scripts/judge-gauntlet RESULT_FILE [JUDGE_MODEL] [ENDPOINT]"
+    exit 1
+fi
+
+RESULT_FILE="$1"
+JUDGE_MODEL="${2:-gpt-oss:20b}"
+ENDPOINT="${3:-http://127.0.0.1:8000}"
+
+# Always execute from the repository root so relative paths remain predictable.
+cd "$(dirname "$0")/.."
+
+python3 -m benchmark.judge \
+    "$RESULT_FILE" \
+    --judge-model "$JUDGE_MODEL" \
+    --endpoint "$ENDPOINT"
